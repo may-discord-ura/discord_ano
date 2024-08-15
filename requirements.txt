@@ -1,3 +1,4 @@
 discord-py-slash-command
 discord.py
 asyncio
+aiohttp
