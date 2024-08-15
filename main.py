@@ -34,6 +34,16 @@ ANONYM_LIST = 'anolist.json'
 # 真名看破処理が既に行われたメッセージIDのセット
 processed_messages_special = set()
 
+### 関数定義
+# 設定を読み込む
+def load_config(file):
+    with open(file, 'r') as f:
+        return json.load(f)
+
+# 設定を書き込む
+def save_config(config, file):
+    with open(file, 'w') as f:
+        json.dump(config, f, indent=4)
 
 # id生成用の関数
 def get_random_string(length: int) -> str:
