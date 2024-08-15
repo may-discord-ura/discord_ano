@@ -8,8 +8,15 @@ discordで匿名発言するbot
 - 実行ログの出力機能
 
 ## 準備
-- 環境変数`TOKEN`のbotのトークンを入れておいてください
+### discord側の準備
+- 開発者ポータルからbotを作成する
+  - トークンを確保
+  - `MESSAGE CONTENT INTENT`をオンにする
+  - `Administrator`権限を付与するか、`Attach Files`,`MAnage Messages`,`Send Messages`,`Send Messages in Threads`,`View Channels`を付与
+### サーバーの設定
+- 環境変数`TOKEN`にbotのトークンを入れておいてください
   - 面倒な場合は`main.py`最終行の`"TOKEN"`に直接トークンを入れる
+### botの設定
 - `指定したチャンネルの発言を自動でbotからの投稿に置き換える`機能を使用する場合、channel.json内の"匿名変換対象チャンネル"にチャンネルIDを入れてください
 
 ## 実行
