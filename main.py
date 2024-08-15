@@ -6,17 +6,15 @@ import re
 import time
 import string
 import datetime
-from discord.ui import Modal, Button, View, TextInput  #モーダル関連
-from collections import defaultdict, deque
+import aiohttp
+from discord.ui import Modal, TextInput  #モーダル関連
 
 from discord import app_commands
-from discord.ext import commands, tasks
-from datetime import timedelta
+from discord.ext import commands
 
 # インテントの生成
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
 
 # botの定義
 bot = commands.Bot(intents=intents, command_prefix="$", max_messages=10000)
@@ -34,6 +32,7 @@ ANONYM_LIST = 'anolist.json'
 # 真名看破処理が既に行われたメッセージIDのセット
 processed_messages_special = set()
 
+
 ### 関数定義
 # 設定を読み込む
 def load_config(file):
@@ -43,7 +42,7 @@ def load_config(file):
 # 設定を書き込む
 def save_config(config, file):
     with open(file, 'w') as f:
-        json.dump(config, f, indent=4)
+        json.dump(config, f, indent=4,ensure_ascii=False)
 
 # id生成用の関数
 def get_random_string(length: int) -> str:
@@ -56,23 +55,26 @@ def get_random_string(length: int) -> str:
 # idをjsonに格納・読み出しする関数
 def reload_ids(user_id):
     global member_data
-    with open("ids.json", "r", encoding="utf-8") as json_file:
-        member_data = json.load(json_file)
-    check_date()
-    if str(user_id) not in member_data:
-        new_data = {
-            "tid":
-            get_random_string(8),
-            "color":
-            random.choice((0x66cdaa, 0x7cfc00, 0xffd700, 0xc0c0c0,0xba55d3))  #水色、緑、橙、灰、紫
-        }
-        member_data[user_id] = new_data
+    if os.path.exists("ids.json"):
+        with open("ids.json", "r", encoding="utf-8") as json_file:
+            member_data = json.load(json_file)
+        check_date()
+        if str(user_id) not in member_data:
+            new_data = {
+                "tid":
+                get_random_string(8),
+                "color":
+                random.choice((0x66cdaa, 0x7cfc00, 0xffd700, 0xc0c0c0,0xba55d3))  #水色、緑、橙、灰、紫
+            }
+            member_data[user_id] = new_data
+    else:
+        member_data = {}
+
     # jsonを書き込んで読み込み直す
     with open("ids.json", "w", encoding="utf-8") as json_file:
         json.dump(member_data, json_file, ensure_ascii=False, indent=4)
     with open("ids.json", "r", encoding="utf-8") as json_file:
         member_data = json.load(json_file)
-
 
 def check_date():
     global member_data
@@ -114,7 +116,7 @@ async def ano_post(本文: str,user_id: int,id表示: bool,添付ファイル: d
     if 添付ファイル:
         attachment_file = await 添付ファイル.to_file()
         attachment_file_log = await 添付ファイル.to_file()
-    
+
     # 半角スペースx2を改行に変換
     本文 = 本文.replace("  ", "\n")
 
@@ -149,7 +151,7 @@ async def ano_post(本文: str,user_id: int,id表示: bool,添付ファイル: d
         message_channel = bot.get_channel(channelid)
     else:
         message_channel = interaction.channel
-        
+
     if resmode is True: # 返信版
         message = await message.reply(embed=ano_embed)
     elif attachment_file:
@@ -161,7 +163,7 @@ async def ano_post(本文: str,user_id: int,id表示: bool,添付ファイル: d
     global anonyms
     anonyms[message.id] = [command_count, user_id]
     save_config(anonyms, ANONYM_LIST)
-    
+
     ###ログ送信部分###
     # コマンドを実行したチャンネルorスレッドを取得
     # 自動変換の場合とそうでない場合
@@ -175,35 +177,38 @@ async def ano_post(本文: str,user_id: int,id表示: bool,添付ファイル: d
         username = bot.get_user(user_id)
 
     # ログ保存用チャンネルにメッセージを送信
-    log_channel = bot.get_channel(LOG_CHANNEL_ID[0])
-    if log_channel:
-        log_message = (
-            f"**名前:** {username}<@{user_id}>\n"  #0624
-            f"**チャンネル:**{thread_name}<#{thread_id}>\n"
-            f"**内容:** {本文}"  #0624
-            f"　[jump]({message.jump_url})"  #0624
-        )
-        log_embed = discord.Embed(
-            title='Anonymous実行ログ#' + str(command_count),
-            description=log_message,
-            color=0x3498db  # 色を指定 (青色)
-        )
-
-        #添付ファイルの有無で分岐
-        if attachment_file_log:
-            url_without_query = re.sub(r'\?.*$', '', attachment_file_log.filename.lower())
-            if url_without_query.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                log_embed.set_image(url=f"attachment://{attachment_file_log.filename}")
+    try:
+        log_channel = bot.get_channel(LOG_CHANNEL_ID[0])
+        if log_channel:
+            log_message = (
+                f"**名前:** {username}<@{user_id}>\n"  #0624
+                f"**チャンネル:**{thread_name}<#{thread_id}>\n"
+                f"**内容:** {本文}"  #0624
+                f"　[jump]({message.jump_url})"  #0624
+            )
+            log_embed = discord.Embed(
+                title='Anonymous実行ログ#' + str(command_count),
+                description=log_message,
+                color=0x3498db  # 色を指定 (青色)
+            )
+            #添付ファイルの有無で分岐
+            if attachment_file_log:
+                url_without_query = re.sub(r'\?.*$', '', attachment_file_log.filename.lower())
+                if url_without_query.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                    log_embed.set_image(url=f"attachment://{attachment_file_log.filename}")
+                else:
+                    log_embed.add_field(name="添付ファイル", value=attachment_file_log.filename, inline=False)
+    
+            if attachment_file_log:
+                await log_channel.send(embed=log_embed, file=attachment_file_log)
             else:
-                log_embed.add_field(name="添付ファイル", value=attachment_file_log.filename, inline=False)
-                
-        if attachment_file_log:
-            await log_channel.send(embed=log_embed, file=attachment_file_log)
+                await log_channel.send(embed=log_embed)
         else:
-            await log_channel.send(embed=log_embed)
+            print(f"チャンネルID {LOG_CHANNEL_ID[0]} が見つかりませんでした")
+    except Exception:
+        pass
         
-    else:
-        print(f"チャンネルID {LOG_CHANNEL_ID[0]} が見つかりませんでした")
+
 
     # コマンドの実行タイミングを記録
     last_executed[user_id] = current_time
@@ -222,53 +227,32 @@ async def on_ready():
     global command_count
     global day_count
     global config
-    global PREDEFINED_NAME
-    global TARGET_CHANNEL_ID,AUTODELETE_CHANNEL_ID, LOG_CHANNEL_ID, SPEED_CHANNEL_ID, FORUM_ALERT_CHANNEL_ID, BOTCOMMAND_ALERT_CHANNEL_ID,DELETE_LOG_CHANNEL_ID
-    global BOT_AUTODELETE_ID, ANO_CHANGE_CHANNEL_ID, EARTHQUAKE_CHANNEL_ID
-    global server_timezone
-    global is_enabled_threadstop, is_enabled_react, is_enabled_futaba
-    global is_enabled_channelspeed, is_enabled_msgdellog #ログ関係
-    global is_enabled_onmessage_bot, is_enabled_onmessage_temp
-    global is_enabled_anochange, is_enabled_earthquake
-    global last_eq_id
+    global LOG_CHANNEL_ID,ANONYM_LIST,ANO_CHANGE_CHANNEL_ID
     global anonyms
     command_count = 0  # コマンド実行回数をカウントするための変数
     if os.path.exists(CONFIG_FILE):
         # 初期設定の読み込み
         config = load_config(CONFIG_FILE)
-        if config.get('server_timezone', "UTC") == "JST":# タイムゾーンを定義
-            JST = datetime.timezone(timedelta(hours=+9), 'JST')
-            server_timezone = JST
-        else:
-            UTC = datetime.timezone(timedelta(hours=+0), 'UTC')
-            server_timezone = UTC
-        command_count = config.get('command_count', 0)
-        day_count = config.get('day_count', 0)
-        is_enabled_threadstop = config.get('is_enabled_threadstop', False)
-        is_enabled_react = config.get('is_enabled_react', False)
-        is_enabled_futaba = config.get('is_enabled_futaba', False)
-        is_enabled_channelspeed = config.get('is_enabled_channelspeed', False)
-        is_enabled_onmessage_bot = config.get('is_enabled_onmessage_bot',False)
-        is_enabled_onmessage_temp = config.get('is_enabled_onmessage_temp',False)
-        is_enabled_msgdellog = config.get('is_enabled_msgdellog', False)
-        is_enabled_anochange = config.get('is_enabled_anochange', False)
-        is_enabled_earthquake= config.get('is_enabled_earthquake', False)
-        PREDEFINED_NAME = config.get('PREDEFINED_NAME', "としあき")
-        last_eq_id = config.get('last_eq_id', "0")
+    else:
+        config = {}
+    command_count = config.get('command_count', 0)
+    day_count = config.get('day_count', 0)
 
 
     if os.path.exists(CHANNEL_LIST):
         channels = load_config(CHANNEL_LIST)
         LOG_CHANNEL_ID = channels.get('ログ保存先チャンネル', [])
-        
-    if os.path.exists(AUTODELETE_LIST):
-        autodelete_config = load_config(AUTODELETE_LIST)
+        ANO_CHANGE_CHANNEL_ID = channels.get('匿名変換対象チャンネル', [])
+    else:
+        channels = {'ログ保存先チャンネル': [],"匿名変換対象チャンネル" : []}
+        save_config(channels, CHANNEL_LIST)
 
     # 匿名投稿の開示用リスト読み込み
     if os.path.exists(ANONYM_LIST):
         anonyms = load_config(ANONYM_LIST)
     else:
         anonyms = {}
+        save_config(anonyms, ANONYM_LIST)
 
 ### -----スラッシュコマンド------
 # ヘルプコマンド
@@ -306,7 +290,7 @@ async def ano(interaction: discord.Interaction,本文: str = "",id表示: bool =
     if interaction.guild is None:
         await interaction.response.send_message("DM内では使えないよ",ephemeral=True)
         return
-    
+
     ###事前チェック部分###
     #本文と添付ファイルがどっちもない場合はモーダルを表示
     if 本文 == "":
@@ -362,7 +346,7 @@ class ReplyModal(Modal):
 @tree.context_menu(name="とくめいさんにレスさせる")
 async def ano_reply(interaction: discord.Interaction,message: discord.Message):
     await interaction.response.send_modal(ReplyModal(message))
-  
+
 
 ### --------------on_reaction_addコーナー-------------- ###
 # delが溜まるとタイムアウト
@@ -388,29 +372,31 @@ async def on_reaction_add(reaction, user):
 @bot.event
 async def on_message(message):
     # 指定チャンネルの発言を匿名変換
-    if is_enabled_anochange:
-        if not message.author.bot and message.channel.id in ANO_CHANGE_CHANNEL_ID:  # 発言者がbotでない場合、指定のチャンネル以外で実行
-            # 添付ファイルを取得
-            attachment_file = None
-            attachment_file_log = None
-            if message.attachments:
-                attachment = message.attachments[0]
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(attachment.url) as response:
-                        if response.status == 200:
-                            data = await response.read()
-                            # ファイル名をクリーンアップ
-                            filename = re.sub(r'[^\w\.\-]', '_', attachment.filename)
-                            # バイナリデータをメモリに保存
-                            attachment_file = discord.File(io.BytesIO(data), filename=filename)
-                            attachment_file_log = discord.File(io.BytesIO(data), filename=filename)# ログに添付する用
+    if not message.author.bot and message.channel.id in ANO_CHANGE_CHANNEL_ID:  # 発言者がbotでない場合、指定のチャンネルで実行
+        # 添付ファイルを取得
+        attachment_file = None
+        attachment_file_log = None
+        if message.attachments:
+            attachment = message.attachments[0]
+            async with aiohttp.ClientSession() as session:
+                async with session.get(attachment.url) as response:
+                    if response.status == 200:
+                        data = await response.read()
+                        # ファイル名をクリーンアップ
+                        filename = re.sub(r'[^\w\.\-]', '_', attachment.filename)
+                        # バイナリデータをメモリに保存
+                        attachment_file = discord.File(io.BytesIO(data), filename=filename)
+                        attachment_file_log = discord.File(io.BytesIO(data), filename=filename)# ログに添付する用
 
-            # 返信かどうかを確認
-            res_message = None
-            resmode = False
-            if message.reference:
-                res_message = await message.channel.fetch_message(message.reference.message_id)
-                resmode = True
-            
-            await ano_post(message.content, message.author.id, False, None, None, resmode, res_message,message.channel.id,attachment_file,attachment_file_log)
-            await message.delete()
+        # 返信かどうかを確認
+        res_message = None
+        resmode = False
+        if message.reference:
+            res_message = await message.channel.fetch_message(message.reference.message_id)
+            resmode = True
+
+        await ano_post(message.content, message.author.id, False, None, None, resmode, res_message,message.channel.id,attachment_file,attachment_file_log)
+        await message.delete()
+
+# クライアントの実行
+bot.run(os.environ["TOKEN"])
